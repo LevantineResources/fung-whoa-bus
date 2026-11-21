@@ -8,9 +8,9 @@ A browser game about surviving an overnight discount bus: keep the bus running, 
 
 Open `index.html` in a browser. There is no build step and there are no dependencies.
 
-- **Space / tap the road:** yell "POTHOLE!" so the driver hops the bus over it
+- **Arrow keys / WASD, or the on-screen buttons:** change lane, speed up, slow down
 - **1–9:** pick a choice
-- **Arrow keys / WASD / tap:** move during the rest stop dash
+- Each mini-game (tire change, rest stop dash, luggage, river crossing, hold on) shows its own controls
 
 ## Publish with GitHub Pages
 
@@ -18,9 +18,9 @@ In the repository on GitHub: **Settings → Pages → Build and deployment → D
 
 ## Code layout
 
-Everything lives in `index.html`. The script is organised into sections: data (seats, companions, items), state, UI, driving, events, stops, the two mini-games (tire change, rest stop dash), endings, and rendering.
+Everything lives in `index.html`. The script is organised into sections: data (seats, companions, items), state, UI, driving, events, stops, the mini-games (tire change, rest stop dash, luggage, river crossing, hold on), endings, and rendering.
 
-To add a road event, append an object to the `EVENTS` array:
+To add a passenger who rides for one leg, add an entry to `RIDERS`. To add a road event, append an object to the `EVENTS` array:
 
 ```js
 { id: 'unique-id', title: 'Title', moving: true,
