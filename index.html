@@ -1,0 +1,1002 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>The Fung Whoa Bus</title>
+<meta name="description" content="Boston to D.C. for $15. A bus-survival game. No refunds. No questions.">
+<style>
+  :root{
+    --ink:#15131f; --night:#1e1b2e; --panel:#f4ead2; --panel-ink:#231f2e;
+    --red:#d8342c; --yellow:#f6c531; --grey:#3a3d4a; --teal:#39c2a8; --good:#2c8a4b; --bad:#b3261e;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--ink);color:var(--panel);font-family:"Courier New",ui-monospace,Menlo,monospace}
+  body{min-height:100vh;display:flex;justify-content:center;padding:10px}
+  #game{width:100%;max-width:720px}
+  #hud{display:grid;grid-template-columns:repeat(3,1fr) auto auto auto;gap:8px;align-items:end;margin-bottom:6px;font-size:12px}
+  .m label{display:block;letter-spacing:.08em;font-weight:bold;margin-bottom:2px}
+  .bar{height:10px;background:#000;border:2px solid var(--panel);position:relative}
+  .bar i{position:absolute;inset:0 auto 0 0;background:var(--yellow);width:50%}
+  #cash,#clock{font-weight:bold;font-size:14px;white-space:nowrap}
+  #clock.late{color:#ff7a6e}
+  #clock small{display:block;font-size:10px;font-weight:normal;opacity:.75}
+  #mute{background:none;border:2px solid var(--panel);color:var(--panel);font:inherit;padding:2px 6px;cursor:pointer}
+  #route{display:flex;flex-wrap:wrap;gap:4px;font-size:11px;margin-bottom:6px;opacity:.9}
+  #route span{padding:1px 6px;border:1px solid #6b6880;color:#a9a5bd}
+  #route span.done{background:#3a3650;color:var(--panel);border-color:#3a3650}
+  #route span.next{background:var(--yellow);color:var(--ink);border-color:var(--yellow);font-weight:bold}
+  canvas{display:block;width:100%;height:auto;image-rendering:pixelated;border:4px solid var(--panel);background:#000;touch-action:manipulation;cursor:pointer}
+  #panel{background:var(--panel);color:var(--panel-ink);border:4px solid var(--panel);border-top:0;padding:14px 16px 16px;min-height:210px;box-shadow:inset 0 0 0 2px var(--panel-ink)}
+  #panel h2{margin:0 0 8px;font-size:20px;letter-spacing:.03em;text-transform:uppercase}
+  .kicker{font-size:11px;letter-spacing:.15em;color:var(--red);font-weight:bold;margin-bottom:2px;text-transform:uppercase}
+  .body{font-size:15px;line-height:1.45;margin-bottom:12px}
+  .body p{margin:0 0 8px}
+  .choices{display:grid;gap:8px}
+  button.choice{font:inherit;font-size:15px;font-weight:bold;text-align:left;padding:10px 12px;background:var(--panel-ink);color:var(--panel);border:0;border-left:8px solid var(--red);cursor:pointer}
+  button.choice:hover:not(:disabled){background:var(--red)}
+  button.choice:disabled{opacity:.38;cursor:not-allowed;border-left-color:#777}
+  button.choice small{display:block;font-weight:normal;font-size:12px;opacity:.8;margin-top:2px}
+  button.choice .k{display:inline-block;min-width:1.4em;color:var(--yellow)}
+  button.choice.on{background:var(--good)}
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin:0 0 12px}
+  .chip{font-size:12px;font-weight:bold;padding:2px 8px;color:#fff;background:var(--bad)}
+  .chip.good{background:var(--good)}
+  .row{display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;padding:6px 0;border-bottom:1px dashed #b9ad8e}
+  .row b{font-size:15px}.row small{display:block;font-size:12px;opacity:.8}
+  .qty{display:flex;align-items:center;gap:8px;font-weight:bold}
+  .qty button{font:inherit;font-weight:bold;width:32px;height:32px;border:0;background:var(--panel-ink);color:var(--panel);cursor:pointer}
+  .qty button:disabled{opacity:.3}
+  #drive{display:grid;gap:10px}
+  #legline{font-weight:bold;font-size:15px}
+  #ticker{font-size:14px;min-height:42px;font-style:italic}
+  .big{font-size:18px!important;text-align:center!important;border-left:0!important;background:var(--red)!important;padding:16px!important;user-select:none}
+  .receipt{background:#fffdf5;border:1px dashed #555;padding:12px 14px;font-size:14px;line-height:1.5;white-space:pre-wrap;margin-bottom:12px}
+  h1.title{font-size:34px;line-height:1;margin:0 0 6px;color:var(--red);text-shadow:2px 2px 0 var(--yellow)}
+  @media(max-width:520px){#hud{grid-template-columns:repeat(3,1fr)}#panel h2{font-size:17px}h1.title{font-size:26px}}
+</style>
+</head>
+<body>
+<main id="game">
+  <div id="hud">
+    <div class="m"><label>BUS</label><div class="bar"><i id="m-health"></i></div></div>
+    <div class="m"><label>MORALE</label><div class="bar"><i id="m-morale"></i></div></div>
+    <div class="m"><label>BLADDER</label><div class="bar"><i id="m-bladder"></i></div></div>
+    <div id="cash">$15</div>
+    <div id="clock"></div>
+    <button id="mute" title="Sound on/off">♪</button>
+  </div>
+  <div id="route"></div>
+  <canvas id="c" width="640" height="360" aria-label="Game view"></canvas>
+  <section id="panel" aria-live="polite"></section>
+</main>
+
+<script>
+'use strict';
+/* ============================================================
+   THE FUNG WHOA BUS
+   Single-file game. Sections: helpers, data, state, UI, flow,
+   events, stops, mini-games, rendering, main loop.
+   ============================================================ */
+const GAME_NAME = 'The Fung Whoa Bus';
+
+/* ---------- helpers ---------- */
+const $ = s => document.querySelector(s);
+const cv = $('#c'), g = cv.getContext('2d'), panel = $('#panel');
+const W = 320, H = 180;                      // logical canvas size (drawn at 2x)
+const rnd = (a, b) => a + Math.random() * (b - a);
+const pick = a => a[Math.random() * a.length | 0];
+const chance = p => Math.random() < p;
+const clamp = (v, a = 0, b = 100) => Math.max(a, Math.min(b, v));
+const hash = i => { const x = Math.sin(i * 127.1) * 43758.5453; return x - Math.floor(x); };
+function el(tag, text, cls) { const e = document.createElement(tag); if (text) e.innerHTML = text; if (cls) e.className = cls; return e; }
+
+let audio = null, muted = false;
+function beep(freq = 440, dur = .08, type = 'square', vol = .05) {
+  if (muted) return;
+  try {
+    audio = audio || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audio.createOscillator(), v = audio.createGain();
+    o.type = type; o.frequency.value = freq; v.gain.value = vol;
+    v.gain.exponentialRampToValueAtTime(.0001, audio.currentTime + dur);
+    o.connect(v).connect(audio.destination); o.start(); o.stop(audio.currentTime + dur);
+  } catch (e) { /* sound is optional */ }
+}
+
+/* ---------- data ---------- */
+const DEPART_HOUR = 18;          // 6:00 PM
+const DEADLINE = 11 * 60;        // minutes after departure: 5:00 AM
+const SEC_PER_MILE = 0.3;        // real seconds per game mile
+const ROAD_Y = 150;
+
+const SEATS = [
+  { id: 'front', n: 'Front row', d: 'You can see every pothole coming. You can also see how he drives.' },
+  { id: 'wheel', n: 'Over the wheel well', d: 'Every bump is personal. But you will hear the tire go before anyone else.' },
+  { id: 'back',  n: 'Back row, by the bathroom', d: 'Bladder emergencies are no emergency. The smell is a lifestyle.' },
+  { id: 'stranger', n: 'Next to a stranger', d: 'A third companion joins your party. You do not get to pick which.' },
+];
+
+const PEOPLE = {
+  dev:   { n: 'Dev', role: 'sophomore, duffel the size of a canoe', c: '#4aa3ff',
+           perk: 'Once per trip, the duffel contains the exact item you need.', flaw: 'Last back on the bus at every stop (+8 min).' },
+  ruth:  { n: 'Grandma Ruth', role: 'keeper of the Mystery Cooler', c: '#e58fd0',
+           perk: 'Feeds everyone at each stop (+morale).', flaw: 'The cooler has needs of its own.' },
+  gary:  { n: 'Speakerphone Gary', role: 'closing a deal, loudly', c: '#f29a3a',
+           perk: 'His calls leak traffic intel (traffic delays halved).', flaw: 'Morale drains while he talks. He is always talking.' },
+  bjorn: { n: 'Björn', role: 'first-time tourist', c: '#ffe07a',
+           perk: 'Delighted by everything (+morale after every event).', flaw: 'Photographs every stop (+6 min).' },
+  rosa:  { n: 'Rosa', role: 'off-duty mechanic', c: '#b98cff',
+           perk: 'Halves the work of a tire change, and can fix an engine.', flaw: 'Strictly off duty unless morale is 50+.' },
+  todd:  { n: 'Todd Human', role: 'a regular human man', c: '#39c2a8',
+           perk: 'Sometimes the bus simply floats over a pothole.', flaw: 'Absorbs one pork bun per leg. Sulks without one.' },
+};
+
+const ITEMS = {
+  bun:     { n: 'Pork bun', p: 2, d: 'Eat anytime for +15 morale. Occasionally accepted as currency.' },
+  tape:    { n: 'Duct tape', p: 3, d: 'Fixes doors, coolers, and engines it has no business fixing.' },
+  charger: { n: 'Phone charger', p: 4, d: 'Navigation, when the driver is "taking a call".' },
+  pillow:  { n: 'Neck pillow', p: 4, d: 'Slower morale loss. Also a diplomatic tool.' },
+  dram:    { n: 'Dramamine', p: 3, d: 'For when someone turns green. Greener.' },
+  ticket:  { n: 'Second ticket', p: 7, d: 'Just in case. In case of what? You will know.' },
+};
+
+const BUSES = [
+  { n: 'FUNG WHOA', b: '#d8342c', s: '#f6c531', t: '#fff' },
+  { n: 'LUCKY COMET', b: '#2f6fd0', s: '#ffffff', t: '#fff' },
+  { n: '', b: '#7b7f8c', s: '#5c5f6b', t: '#fff' },
+  { n: 'BUS', b: '#eee9da', s: '#f6c531', t: '#333' },
+  { n: 'WHOA PREMIUM', b: '#c9a227', s: '#fff3c4', t: '#3a2a00' },
+];
+
+const TICKER = [
+  `The driver changes five lanes in one motion. It is, technically, one lane change.`,
+  `A sign reads SPEED LIMIT 65. The bus reads it as a dare.`,
+  `The reading light above you turns on by itself, considers things, and turns off.`,
+  `Someone behind you is eating something with a great many layers of foil.`,
+  `The bus overtakes a police car. The officer salutes.`,
+  `You have been next to the same truck for forty miles. You feel you know it.`,
+  `The seat in front of you reclines fully into your lap, and then a little further.`,
+  `The radio plays a song you almost recognise, at a speed you definitely don't.`,
+  `A pigeon is keeping pace with the bus. It looks tired but determined.`,
+  `The air conditioning drips on you exactly once every ninety seconds.`,
+  `You glimpse the speedometer. The needle is resting against the far side.`,
+  `Every passenger sneezes at the same moment. Nobody mentions it.`,
+  `The bus hums a single low note. After a while you realise it is in tune with you.`,
+  `The driver waves at an oncoming bus. It flashes its lights in a pattern. He nods.`,
+  `Your ticket, on inspection, just says "BUS" and has a drawing of a bus.`,
+];
+
+/* ---------- state ---------- */
+let S, chips = [], MG = null;
+const scene = { scroll: 0, speed: 0, pots: [], potT: 2, hopY: 0, hopV: 0, cool: 0, shake: 0, glow: 0, smoke: [], ufo: 0, tick: 0, tickT: 0 };
+const keys = {};
+
+function newGame() {
+  S = {
+    mode: 'menu', seat: null, party: [], lost: [],
+    inv: { bun: 0, tape: 0, charger: 0, pillow: 0, dram: 0, ticket: 0 },
+    cash: 15, health: 70, morale: 75, bladder: 10, t: 0,
+    route: [], leg: 0, legMi: 0, bus: 0, seen: {}, flags: {},
+    stats: { buses: 1, buns: 0, hit: 0, dodged: 0, tires: 0 },
+  };
+  Object.assign(scene, { pots: [], speed: 0, hopY: 0, hopV: 0, smoke: [], ufo: 0 });
+}
+const has = id => S.party.includes(id);
+const leg = () => S.route[S.leg];
+const name = id => PEOPLE[id].n;
+// Dev's duffel stands in for one missing item per trip.
+const own = k => S.inv[k] > 0 || (k !== 'bun' && k !== 'ticket' && has('dev') && !S.flags.duffel);
+function useItem(k, keep) {
+  if (S.inv[k] > 0) { if (!keep) S.inv[k]--; return ''; }
+  S.flags.duffel = 1;
+  return ` <i>(Dev unzips the duffel, reaches in to the shoulder, and produces one.)</i>`;
+}
+function give(k, n = 1) { S.inv[k] += n; chips.push(['+ ' + ITEMS[k].n + (n > 1 ? ' ×' + n : ''), true]); }
+function lose(id) { S.party = S.party.filter(p => p !== id); S.lost.push(id); chips.push(['− ' + name(id), false]); }
+
+function apply(o) {
+  for (const k in o) {
+    const v = o[k]; if (!v) continue;
+    const mag = Math.abs(Math.round(v));
+    if (k === 'time') { S.t += v; chips.push([(v > 0 ? '+' : '−') + mag + ' min', v < 0]); }
+    else if (k === 'cash') { S.cash = Math.max(0, S.cash + v); chips.push([(v > 0 ? '+$' : '−$') + mag, v > 0]); }
+    else if (k === 'bladder') { S.bladder = clamp(S.bladder + v); chips.push(['bladder ' + (v > 0 ? '▲' : '▼'), v < 0]); }
+    else if (k === 'health') { S.health = clamp(S.health + v); chips.push(['bus ' + (v > 0 ? '+' : '−') + mag, v > 0]); }
+    else if (k === 'morale') { S.morale = clamp(S.morale + v); chips.push(['morale ' + (v > 0 ? '+' : '−') + mag, v > 0]); }
+  }
+}
+function clockStr(t) {
+  const m = Math.round(DEPART_HOUR * 60 + t) % 1440, h = Math.floor(m / 60), mm = String(m % 60).padStart(2, '0');
+  return `${((h + 11) % 12) + 1}:${mm} ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+/* ---------- UI ---------- */
+function chipsHTML() {
+  if (!chips.length) return '';
+  return `<div class="chips">${chips.map(c => `<span class="chip ${c[1] ? 'good' : ''}">${c[0]}</span>`).join('')}</div>`;
+}
+function card(title, body, choices, kicker) {
+  panel.innerHTML = '';
+  if (kicker) panel.append(el('div', kicker, 'kicker'));
+  panel.append(el('h2', title), el('div', body, 'body'));
+  const box = el('div', '', 'choices');
+  choices.forEach((c, i) => {
+    const b = el('button', `<span class="k">${i + 1}</span>${c.label}${c.sub ? `<small>${c.sub}</small>` : ''}`, 'choice' + (c.cls ? ' ' + c.cls : ''));
+    b.disabled = !!c.disabled;
+    b.onclick = () => { beep(520, .05); c.fn(); };
+    box.append(b);
+  });
+  panel.append(box);
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+}
+function outcome(title, text, next, kicker) {
+  card(title, `<p>${text}</p>` + chipsHTML(), [{ label: 'Continue', fn: next }], kicker);
+}
+function updateHUD() {
+  const set = (id, v, col) => { const e = $(id); e.style.width = clamp(v) + '%'; e.style.background = col; };
+  set('#m-health', S.health, S.health < 30 ? '#ff5a4e' : '#f6c531');
+  set('#m-morale', S.morale, S.morale < 30 ? '#ff5a4e' : '#7fd66b');
+  set('#m-bladder', S.bladder, S.bladder > 75 ? '#ff5a4e' : '#6cc5ff');
+  $('#cash').textContent = '$' + S.cash;
+  const c = $('#clock'); c.innerHTML = `${clockStr(S.t)}<small>due in D.C. ${clockStr(DEADLINE)}</small>`;
+  c.className = S.t > DEADLINE ? 'late' : '';
+  const stops = ['Boston', ...S.route.map(l => l.to)];
+  if (stops[stops.length - 1] !== 'D.C.') stops.push('· · ·', 'D.C.');
+  const started = S.route.length > 0;
+  $('#route').innerHTML = stops.map((s, i) => `<span class="${started && i <= S.leg ? 'done' : i === (started ? S.leg + 1 : 0) ? 'next' : ''}">${s}</span>`).join('');
+}
+
+/* ---------- setup flow ---------- */
+function title() {
+  newGame();
+  panel.innerHTML = '';
+  panel.append(
+    el('h1', 'THE FUNG WHOA BUS', 'title'),
+    el('div', `<p><b>Boston → Washington, D.C. · $15 · No refunds · No questions.</b></p>
+      <p>It is 6:00 PM on a Chinatown sidewalk. You need to be in D.C. by 5:00 AM. A man has sold you a ticket out of a fanny pack, and a bus is idling at the curb in a way that suggests it would rather not be.</p>
+      <p>Keep the bus running, your spirits up, and your bladder in check.</p>`, 'body'));
+  const box = el('div', '', 'choices');
+  const b = el('button', '<span class="k">1</span>Board the bus', 'choice');
+  b.onclick = () => { beep(660, .08); seatScreen(); };
+  box.append(b); panel.append(box);
+}
+function seatScreen() {
+  card('Pick your seat', `Most seats are taken. Some are taken by things that aren't passengers.`,
+    SEATS.map(s => ({ label: s.n, sub: s.d, fn: () => { S.seat = s.id; partyScreen(); } })), 'Step 1 of 3');
+}
+function partyScreen() {
+  const chosen = [];
+  const draw = () => {
+    card('Choose two travel companions', `These people are also going your way, more or less.`,
+      Object.keys(PEOPLE).map(id => ({
+        label: `${PEOPLE[id].n} <span style="font-weight:normal">— ${PEOPLE[id].role}</span>`,
+        sub: `＋ ${PEOPLE[id].perk}<br>－ ${PEOPLE[id].flaw}`,
+        cls: chosen.includes(id) ? 'on' : '',
+        disabled: chosen.length >= 2 && !chosen.includes(id),
+        fn: () => { chosen.includes(id) ? chosen.splice(chosen.indexOf(id), 1) : chosen.push(id); S.party = [...chosen]; draw(); },
+      })).concat([{ label: 'These two. Let’s go.', disabled: chosen.length !== 2, fn: () => {
+        S.party = [...chosen];
+        let intro = `A man is selling supplies out of the luggage hold. You have $15 and a feeling.`;
+        if (S.seat === 'stranger') {
+          const extra = pick(Object.keys(PEOPLE).filter(p => !has(p)));
+          S.party.push(extra);
+          intro = `The stranger beside you turns out to be <b>${name(extra)}</b> (${PEOPLE[extra].role}). They have already started talking.<br><br>` + intro;
+        }
+        shop('Supplies', intro, routeChoice1, 'Step 3 of 3');
+      } }]), 'Step 2 of 3');
+  };
+  draw();
+}
+function shop(titleText, intro, done, kicker) {
+  S.mode = 'menu';
+  const bought = {};
+  const draw = () => {
+    panel.innerHTML = '';
+    if (kicker) panel.append(el('div', kicker, 'kicker'));
+    panel.append(el('h2', titleText), el('div', intro, 'body'));
+    for (const k in ITEMS) {
+      const it = ITEMS[k], row = el('div', `<div><b>${it.n} — $${it.p}</b><small>${it.d}</small></div>`, 'row');
+      const q = el('div', '', 'qty'), minus = el('button', '−'), plus = el('button', '+');
+      minus.disabled = !bought[k]; plus.disabled = S.cash < it.p;
+      minus.onclick = () => { bought[k]--; S.inv[k]--; S.cash += it.p; beep(300, .04); draw(); };
+      plus.onclick = () => { bought[k] = (bought[k] || 0) + 1; S.inv[k]++; S.cash -= it.p; beep(600, .04); draw(); };
+      q.append(minus, el('span', String(S.inv[k])), plus); row.append(q); panel.append(row);
+    }
+    const box = el('div', '', 'choices'); box.style.marginTop = '12px';
+    const b = el('button', `<span class="k">1</span>Done — $${S.cash} left`, 'choice');
+    b.onclick = () => { beep(660, .08); done(); };
+    box.append(b); panel.append(box);
+  };
+  draw();
+}
+function routeChoice1() {
+  card('Which way to New York?', `The driver holds up two fingers, which you take to be a question about the route.`, [
+    { label: 'The coast, via Providence', sub: 'Smoother road. Slower. More Rhode Island than strictly necessary.', fn: () => {
+      S.route = [{ to: 'Providence', mi: 50, stop: 'dash', pot: .8, spd: .92 }, { to: 'New Haven', mi: 103, stop: 'newhaven', pot: .8, spd: .92 }, { to: 'New York', mi: 80, stop: 'nyc', pot: 1.1, spd: .95 }];
+      startLeg();
+    } },
+    { label: 'Inland, via Hartford', sub: 'Faster. The road was last paved during a different century.', fn: () => {
+      S.route = [{ to: 'Hartford', mi: 100, stop: 'dash', pot: 1.5, spd: 1.08 }, { to: 'New Haven', mi: 40, stop: 'newhaven', pot: 1.3, spd: 1.08 }, { to: 'New York', mi: 80, stop: 'nyc', pot: 1.1, spd: .95 }];
+      startLeg();
+    } },
+  ], 'Departure · 6:00 PM');
+}
+function routeChoice2() {
+  card('Which way to D.C.?', `Your new driver asks the bus at large. The bus at large looks at you.`, [
+    { label: 'Through Philadelphia', sub: 'Slower. But: cheesesteaks, and a mechanic who asks no questions.', fn: () => {
+      S.route.push({ to: 'Philadelphia', mi: 95, stop: 'philly', pot: 1, spd: .92 }, { to: 'Baltimore', mi: 100, stop: 'dash', pot: 1, spd: .95 }, { to: 'D.C.', mi: 40, stop: 'end', pot: 1, spd: .95 });
+      startLeg();
+    } },
+    { label: 'Straight down the Turnpike', sub: 'Fast, featureless, and hard on the bus.', fn: () => {
+      S.route.push({ to: 'Turnpike Plaza', mi: 85, stop: 'dash', pot: 1.6, spd: 1.15 }, { to: 'Baltimore', mi: 105, stop: 'dash', pot: 1.5, spd: 1.12 }, { to: 'D.C.', mi: 40, stop: 'end', pot: 1, spd: .95 });
+      startLeg();
+    } },
+  ], 'New York');
+}
+
+/* ---------- driving ---------- */
+function startLeg() {
+  if (S.morale <= 0) return ending('quit');
+  const L = leg(); S.legMi = 0;
+  const n = Math.max(1, Math.round(L.mi / 45));
+  L.evAt = Array.from({ length: n }, (_, i) => L.mi * (i + 1) / (n + 1));
+  resumeDrive();
+}
+function resumeDrive() {
+  if (S.morale <= 0) return ending('quit');
+  if (S.health <= 0) return runEvent(BLOWOUT);
+  S.mode = 'drive'; scene.speed = 1; scene.ufo = 0; drivePanel();
+}
+function drivePanel() {
+  panel.innerHTML = '';
+  const d = el('div', '', ''); d.id = 'drive';
+  d.append(Object.assign(el('div', ''), { id: 'legline' }), Object.assign(el('div', pick(TICKER)), { id: 'ticker' }));
+  const yell = el('button', `YELL “POTHOLE!” <small>space / tap — the driver hops the bus over it</small>`, 'choice big');
+  yell.addEventListener('pointerdown', e => { e.preventDefault(); hop(); });
+  d.append(yell);
+  const bun = el('button', `<span class="k">1</span>Eat a pork bun (${S.inv.bun}) <small>+15 morale</small>`, 'choice');
+  bun.disabled = !S.inv.bun;
+  bun.onclick = () => { S.inv.bun--; S.stats.buns++; S.morale = clamp(S.morale + 15); beep(700, .1, 'triangle'); drivePanel(); };
+  d.append(bun); panel.append(d);
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+}
+function hop(auto) {
+  if (S.mode !== 'drive' || scene.hopY > 0 || scene.cool > 0) return;
+  scene.hopV = 95; scene.hopY = .01;
+  if (!auto) S.health = clamp(S.health - .5);   // the suspension has opinions
+  beep(auto ? 880 : 440, .09, 'triangle');
+}
+function driveTick(dt) {
+  const L = leg();
+  const mph = 58 * L.spd * (S.health < 30 ? .75 : 1);
+  const dMi = dt / SEC_PER_MILE;
+  S.legMi += dMi; S.t += dMi * 60 / mph;
+  S.health = clamp(S.health - dMi * .09 * L.pot);
+  S.bladder = clamp(S.bladder + dMi * .34);
+  let drain = .05;
+  if (S.seat === 'back') drain += .05;
+  if (S.seat === 'front') drain += .025;
+  if (has('gary')) drain += .04;
+  if (S.inv.pillow > 0) drain -= .025;
+  S.morale = clamp(S.morale - dMi * drain);
+
+  // potholes
+  scene.potT -= dt;
+  if (scene.potT <= 0) { scene.pots.push({ x: 345 }); scene.potT = rnd(1.5, 4) / L.pot; }
+  for (const p of scene.pots) {
+    const prev = p.x; p.x -= 120 * dt;
+    if (!p.checked && p.x < 142) {
+      p.checked = true;
+      if (S.flags.foresee > 0) { S.flags.foresee--; hop(true); }
+      else if (has('todd') && chance(.3)) { hop(true); scene.glow = .7; }
+    }
+    if (prev > 112 && p.x <= 112) {
+      if (scene.hopY < 4) {
+        S.health = clamp(S.health - 6); S.morale = clamp(S.morale - (S.seat === 'wheel' ? 3 : 1));
+        S.stats.hit++; scene.shake = .3; beep(80, .15, 'sawtooth', .08);
+      } else S.stats.dodged++;
+    }
+  }
+  scene.pots = scene.pots.filter(p => p.x > -20);
+
+  // ambient ticker
+  scene.tickT += dt;
+  if (scene.tickT > 5.5) { scene.tickT = 0; const t = $('#ticker'); if (t) t.textContent = pick(TICKER); }
+  const ll = $('#legline'); if (ll) ll.textContent = `Next stop: ${L.to} — ${Math.max(0, Math.ceil(L.mi - S.legMi))} mi`;
+
+  // triggers, in priority order
+  if (S.morale <= 0) return ending('quit');
+  if (S.health <= 0) return runEvent(BLOWOUT);
+  if (S.seat === 'wheel' && S.health < 32 && !S.flags.thump) { S.flags.thump = 1; return runEvent(THUMP); }
+  if (S.bladder >= 100) return runEvent(BLADDER);
+  if (S.legMi >= L.mi) return arrive();
+  if (L.evAt.length && S.legMi >= L.evAt[0]) {
+    L.evAt.shift();
+    const pool = EVENTS.filter(e => !S.seen[e.id] && (!e.when || e.when()));
+    if (pool.length) { const e = pick(pool); S.seen[e.id] = 1; runEvent(e); }
+  }
+}
+
+/* ---------- events ---------- */
+function runEvent(ev, next = resumeDrive) {
+  S.mode = 'event'; scene.speed = ev.moving ? 1 : 0; scene.pots = [];
+  if (ev.id === 'ufo') scene.ufo = 1;
+  const text = typeof ev.text === 'function' ? ev.text() : ev.text;
+  const choices = ev.choices.filter(c => !c.show || c.show()).map(c => ({
+    label: c.label + (c.item ? ` <span style="color:var(--yellow)">[${ITEMS[c.item].n}]</span>` : ''),
+    sub: c.sub,
+    disabled: (c.item && !own(c.item)) || (c.cost && S.cash < c.cost) || (c.ok && !c.ok()),
+    fn: () => {
+      chips = [];
+      let r = c.go(); if (typeof r === 'string') r = { text: r };
+      if (c.cost) apply({ cash: -c.cost });
+      if (has('bjorn') && !ev.fixed) apply({ morale: 3 });
+      outcome(ev.title, r.text, r.next || next, ev.kicker);
+    },
+  }));
+  card(ev.title, `<p>${text}</p>`, choices, ev.kicker || `${Math.max(0, Math.ceil(leg().mi - S.legMi))} mi to ${leg().to}`);
+  beep(330, .12, 'triangle');
+}
+
+const EVENTS = [
+  { id: 'engine', title: 'The engine is smoking', moving: true,
+    text: `Grey smoke curls past your window. The driver glances at it in the mirror and turns up the radio. “It’s fine,” he says. “It does that.”`,
+    choices: [
+      { label: 'Believe him', go: () => chance(.6)
+        ? (apply({ morale: 5 }), `The smoke thins, forms something very like a thumbs-up, and disperses. He was right. He is always right, in a way that never feels good.`)
+        : (apply({ health: -15 }), `The smoke turns a colour you’d describe as “expensive”. The bus develops a cough.`) },
+      { label: 'Tape something. Anything.', item: 'tape', go: () => { const n = useItem('tape'); apply({ health: 15, time: 5 }); return `You tape a hose to another hose. You don’t know what either hose does. The smoke stops.` + n; } },
+      { label: 'Ask Rosa to look', show: () => has('rosa'), ok: () => S.morale >= 50, sub: 'She is off duty unless morale is 50+', go: () => { apply({ health: 25, time: 8 }); return `Rosa sighs the sigh of a professional, walks to the front, and hits the dashboard once with the side of her fist. The engine purrs. She invoices no one.`; } },
+    ] },
+  { id: 'exit', title: 'Wrong exit', moving: true,
+    text: `The driver takes a phone call, laughs for four straight miles, and sails past the exit. A sign glides by: <b>WELCOME TO RHODE ISLAND</b>. Beneath it, smaller: <b>(THE OTHER ONE)</b>.`,
+    choices: [
+      { label: 'Navigate from your phone', item: 'charger', go: () => { const n = useItem('charger', true); apply({ time: 10 }); return `Your phone, charged and smug, finds a way back. The second Rhode Island recedes. It was nice. Quieter.` + n; } },
+      { label: 'Shout directions from memory, with confidence', go: () => chance(.5)
+        ? (apply({ time: 10, morale: 5 }), `“LEFT. NO. THE OTHER LEFT.” Somehow it works. The bus applauds you, briefly.`)
+        : (apply({ time: 45, morale: -5 }), `You are now in a third Rhode Island. This one has a slightly different flag.`) },
+      { label: 'Say nothing', go: () => { apply({ time: 30, morale: -5 }); return `He finishes the call, looks around, and performs a U-turn across a median, a Christmas tree farm, and what may have been a wedding.`; } },
+    ] },
+  { id: 'cooler', title: 'The cooler is leaking',
+    text: () => `Something is creeping down the aisle from a large cooler. It glows, faintly, and smells of the ocean and birthday cake. ` + (has('ruth') ? `Grandma Ruth pats the lid. “He’s just excited.”` : `Nobody claims it. The cooler hums.`),
+    choices: [
+      { label: 'Tape the seam', item: 'tape', go: () => { const n = useItem('tape'); apply({ morale: 6 }); return `You seal it. From inside comes a single, grateful knock.` + n; } },
+      { label: 'Ask what’s in it', go: () => has('ruth')
+        ? (apply({ morale: 15, bladder: 15 }), `“Soup,” says Ruth, and ladles you a cup. It is the best soup you have ever had. It is still moving slightly.`)
+        : (apply({ morale: -4, cash: 5 }), `No one answers. The lid lifts half an inch, slides out a damp five-dollar bill, and closes.`) },
+      { label: 'Lift your feet and think of D.C.', go: () => { apply({ morale: -9 }); return `The glow passes beneath you. Your shoelaces are now slightly luminous. They will stay that way.`; } },
+    ] },
+  { id: 'door', title: 'The bathroom door', moving: true,
+    text: `The bathroom door no longer latches. On every curve it swings open, and for a moment you could swear you see a staircase going down.`,
+    choices: [
+      { label: 'Tape it shut', item: 'tape', go: () => { const n = useItem('tape'); apply({ morale: 9 }); return `Sealed. Something on the other side tries the handle once, politely, and gives up.` + n; } },
+      { label: 'Go down the staircase', go: () => { S.bladder = 0; apply({ morale: 10, cash: -1 }); chips.push(['bladder ▼', true]); return `Marble. Soft lighting. An attendant in a waistcoat hands you a warm towel. You tip him a dollar. When you climb back up, no time has passed, and the door is just a door.`; } },
+      { label: 'Hold it shut with your foot', go: () => { apply({ morale: -8 }); return `Forty miles of calf cramp. The door pushes back in a slow rhythm, like breathing.`; } },
+    ] },
+  { id: 'race', title: 'The Lucky Comet', moving: true,
+    text: `A rival bus pulls alongside: the <b>Lucky Comet</b>. The two drivers lock eyes across three lanes. Somewhere, a bell rings.`,
+    choices: [
+      { label: 'Cheer your driver on', go: () => chance(.6)
+        ? (apply({ time: -20, health: -8, morale: 10 }), `The Fung Whoa finds a gear that isn’t on the gearshift. The Comet shrinks in the mirror. The whole bus sings a song nobody taught them.`)
+        : (apply({ health: -18, morale: -5 }), `The Comet pulls away. Your bus makes a sound like a piano falling down a different piano.`) },
+      { label: 'Bet $3 with the man across the aisle', cost: 3, go: () => chance(.5)
+        ? (apply({ cash: 9 }), `You win. He pays up in three warm two-dollar bills, each with a different president you don’t recognise.`)
+        : `You lose. He takes your three dollars and eats them, maintaining eye contact.` },
+      { label: 'Close your eyes until it’s over', go: () => { apply({ bladder: 10 }); return `When you open them you are, somehow, ahead. Nobody will tell you how. Björn, if present, has photos but won’t show you.`; } },
+    ] },
+  { id: 'inspect', title: 'Surprise inspection',
+    text: () => `Blue lights. A state trooper boards with a clipboard. “Everybody act like a normal bus,” whispers the driver. ` + (has('todd') ? `Todd leans over. “Quickly. How many arms is the correct number?”` : `Every passenger sits up straight. So does the bus.`),
+    choices: [
+      { label: 'Sit very, very still', go: () => { apply({ time: 18 }); return `The trooper counts the passengers twice, gets two different numbers, and writes down the average.`; } },
+      { label: 'Coach Todd through it', show: () => has('todd'), go: () => chance(.55)
+        ? (apply({ time: 8, morale: 10 }), `“Two,” you hiss. Todd retracts several. “Good evening, officer of the law,” he says. “I too have a skeleton.” The trooper moves on.`)
+        : (apply({ time: 40, morale: -4 }), `“Two,” you hiss. Todd gives a thumbs up with a hand he had not been showing. The trooper looks at Todd for a very long time.`) },
+      { label: 'Offer the trooper a pork bun', item: 'bun', go: () => { S.inv.bun--; apply({ time: 5, morale: 5 }); return `He considers the bun. He accepts the bun. He writes “BUS: FINE” on the clipboard and underlines it.`; } },
+    ] },
+  { id: 'boxes', title: 'Unscheduled stop',
+    text: `The bus pulls in behind a restaurant. Two men load twelve boxes into the hold. No one explains. Several of the boxes are humming, though not the same tune.`,
+    choices: [
+      { label: 'Help load', go: () => { apply({ cash: 5, time: 10 }); return `One box is warm. One is ticking in 7/8 time. One thanks you. A man tucks five dollars into your collar.`; } },
+      { label: 'Peek inside one', go: () => { apply({ time: 20, morale: 8 }); return `Inside is a perfect scale model of this bus. Through its tiny window, a tiny you looks up and gives a small, encouraging wave. You feel oddly looked after.`; } },
+      { label: 'Stay in your seat', go: () => { apply({ time: 20, morale: -3 }); return `Twenty minutes. The bus now sits two inches lower and smells faintly of star anise.`; } },
+    ] },
+  { id: 'sleeper', title: 'A shoulder to sleep on', moving: true,
+    text: `The stranger beside you has fallen asleep on your shoulder. They are dreaming, audibly, about tax law.`,
+    choices: [
+      { label: 'Slide your neck pillow under them', item: 'pillow', go: () => { const n = useItem('pillow'); apply({ morale: 10, cash: 4 }); return `They never wake. At some point they sleepwalk off the moving bus, leaving four dollars and a note: “Thank you. Deduct the pillow.”` + n; } },
+      { label: 'Wake them gently', go: () => chance(.5)
+        ? (apply({ morale: 5 }), `They apologise and give you a stick of gum from a brand that stopped existing in 1994. It’s still good.`)
+        : (apply({ morale: -14 }), `They wake up furious, mid-argument, and you appear to be losing it. You are now in a feud until New Jersey.`) },
+      { label: 'Endure', go: () => { apply({ morale: -10 }); return `You learn a great deal about depreciation schedules. Your arm no longer feels like it belongs to you.`; } },
+    ] },
+  { id: 'traffic', title: 'Bridge traffic',
+    text: `Brake lights to the horizon. Nothing has moved in so long that a man has set up a small farm stand in the fast lane. The driver cracks his knuckles. “I know a way.”`,
+    choices: [
+      { label: 'Trust him', go: () => { const r = Math.random();
+        if (r < .4) { apply({ time: 15, health: 10, morale: 10 }); return `The way is through a car wash. Slowly, fully, with the wax option. The bus has never been cleaner. Several stains turn out to have been load-bearing, but it holds.`; }
+        if (r < .75) { apply({ time: 20, morale: 10 }); return `The way is through a shopping mall. Through the food court, at walking pace, respectfully. A child hands a pretzel through the window.`; }
+        apply({ time: 25, health: -18 }); return `The way is down a boat ramp. The bus is briefly a boat. It is not a good boat.`; } },
+      { label: 'Wait it out', go: () => { const g = has('gary'); apply({ time: g ? 30 : 60, morale: -8 }); return g
+        ? `Gary’s speakerphone announces a lane opening two minutes before it happens. For once the whole bus leans in to listen.`
+        : `An hour. You buy nothing from the farm stand, but you think about it.`; } },
+    ] },
+  { id: 'carsick', title: 'Someone looks green', moving: true, when: () => S.party.length > 0,
+    text: () => { const p = S.flags.sick = pick(S.party); return `${name(p)} has gone very quiet and very ${p === 'todd' ? 'green. Greener. A green with ambitions' : 'green'}. The driver chooses this moment to discover a shortcut made entirely of curves.`; },
+    choices: [
+      { label: 'Hand over a Dramamine', item: 'dram', go: () => { const n = useItem('dram'); apply({ morale: 8 }); return `Crisis averted. ${name(S.flags.sick)} sleeps peacefully, drooling in what you choose to believe is the normal amount.` + n; } },
+      { label: 'Crack the window', go: () => chance(.5)
+        ? (apply({ morale: 3 }), `The night air helps. The window, once opened, will never close again, but that’s a later problem.`)
+        : (apply({ morale: -13 }), `The window helps nobody. The next ten minutes are a group experience.`) },
+      { label: 'Offer a bag and your sympathy', go: () => { apply({ morale: -6 }); return `The bag was not, in the end, a large enough bag.`; } },
+    ] },
+  { id: 'loop', title: 'The donut shop', moving: true,
+    text: `You pass a donut shop. A man out front waves. This is the third time you have passed this donut shop and the third time he has waved. Same wave.`,
+    choices: [
+      { label: 'Mention it to the driver', go: () => { apply({ time: 15 }); return `He nods gravely, as if you’ve reported a noise in the engine, and turns the wheel exactly one click. The road ahead is new again.`; } },
+      { label: 'Wave back', go: () => { apply({ time: 25, morale: 12 }); return `On the fourth pass he throws a donut through the window. On the fifth, napkins. On the sixth, the loop lets you go.`; } },
+      { label: 'Order a coffee as you go by', cost: 2, go: () => { apply({ time: 15, morale: 10, bladder: 20 }); return `You shout the order on one pass, pay on the next, and catch the cup on the third. It’s exactly how you take it. You never said how you take it.`; } },
+    ] },
+  { id: 'vendor', title: 'A new passenger', moving: true,
+    text: `The bus is doing seventy. The door opens. A man steps on from the highway carrying a suitcase, which he unfolds into a small shop. “Batteries. Tape. Pillows, previously enjoyed.”`,
+    choices: [
+      { label: 'Buy duct tape — $2', cost: 2, go: () => { give('tape'); return `It’s a good roll. It’s already slightly warm.`; } },
+      { label: 'Buy a neck pillow — $2', cost: 2, go: () => { give('pillow'); return `It has someone else’s name embroidered on it. Yours, now.`; } },
+      { label: 'Ask how he got on', go: () => { apply({ morale: 5 }); return `“Same way you did,” he says, and steps off into the median without breaking stride.`; } },
+    ] },
+  { id: 'ufo', title: 'Lights overhead',
+    text: () => `The highway empties. A white light settles over the bus, and the bus rises six inches off the road and hangs there, wheels ticking. ` + (has('todd') ? `Todd slides down in his seat. “That’s my mother,” he says. “Tell her I’m not here.”` : `The driver sighs and reaches for his paperwork.`),
+    choices: [
+      { label: 'Cover for Todd', show: () => has('todd'), go: () => { apply({ morale: 10, time: 10 }); give('bun', 2); return `You lean out and shout that you’ve never met anyone named Todd. A pause. The light withdraws, leaving a foil-covered dish on the roof. It’s pork buns. There’s a note about calling more often.`; } },
+      { label: 'Hand Todd over', show: () => has('todd'), go: () => { lose('todd'); apply({ time: -40, morale: -10 }); return `Todd goes up in the beam, arms folded, all of them. By way of thanks, the light carries the bus thirty miles down the road and sets it down gently in the correct lane.`; } },
+      { label: 'Ask for a lift', show: () => !has('todd'), go: () => { apply({ time: -25, health: -6 }); return `They carry the bus twenty miles and set it down very slightly crooked. A leaflet flutters in: “HOW WAS YOUR ABDUCTION?”`; } },
+      { label: 'Wave', show: () => !has('todd'), go: () => { apply({ time: 10, morale: -4 }); return `The beam scans the bus top to bottom, finds nothing it wants, and leaves. You feel judged.`; } },
+      { label: 'Hide under the seat', go: () => { apply({ time: 12 }); return `Under the seat you find a fossilised french fry and a sense of perspective. The light moves on.`; } },
+    ] },
+  { id: 'wheel', title: '“Hold this”', moving: true,
+    text: `The driver stands up. “Hold this,” he says, nodding at the steering wheel, and walks to the back with a container of noodles.`,
+    choices: [
+      { label: 'Take the wheel', go: () => chance(.6)
+        ? (apply({ morale: 15 }), `You drive a bus for nine minutes. You are magnificent. You signal. Nobody on this bus has ever seen a turn signal and several people cry.`)
+        : (apply({ health: -12, morale: 6 }), `You drive a bus for nine minutes and clip an entire family of traffic cones. Still: you drove a bus.`) },
+      { label: 'Ask if there are more noodles', go: () => { apply({ morale: 10, health: -5 }); return `There are. You both eat. The bus drifts politely across two lanes and back, like it’s thinking.`; } },
+      { label: 'Refuse', go: () => { apply({ morale: -5 }); return `The wheel turns by itself, smoothly. It appears to have been doing this for some time.`; } },
+    ] },
+  { id: 'tv', title: 'In-bus entertainment', moving: true,
+    text: `The little TV above the aisle flickers on. It’s showing this bus, on this highway, filmed from outside. It seems to be running a few seconds ahead.`,
+    choices: [
+      { label: 'Watch closely', go: () => { S.flags.foresee = 6; apply({ morale: 4 }); chips.push(['next 6 potholes dodged', true]); return `On screen the bus hops, hops, swerves, hops. You memorise it, and call each one out a second early. The driver gives you a look of deep professional respect.`; } },
+      { label: 'Wave at the camera', go: () => { apply({ morale: 9 }); return `On screen, you wave a second before you do. Then on-screen you points at something behind you and looks alarmed. You decide not to turn around.`; } },
+      { label: 'Look away', go: () => { apply({ morale: -3 }); return `Some things a passenger is not meant to know. The TV plays to the back of your head for an hour.`; } },
+    ] },
+  { id: 'toll', title: 'Toll booth',
+    text: `The transponder on the windshield turns out to be a calculator held on with gum. The driver has no cash. A hat comes down the aisle.`,
+    choices: [
+      { label: 'Put in $2', cost: 2, go: () => { apply({ morale: 5 }); return `The hat reaches the front heavy with coins, a button, and a baby tooth. The gate lifts.`; } },
+      { label: 'Put in a pork bun', item: 'bun', go: () => { S.inv.bun--; apply({ morale: 8 }); return `The toll collector weighs the bun in one hand. “Rates changed,” she says, and lifts the gate. You get change: a smaller bun.`; } },
+      { label: 'Pass the hat along', go: () => { apply({ time: 20, morale: -5 }); return `The driver negotiates for twenty minutes. In the end he leaves one of the humming boxes as a deposit.`; } },
+    ] },
+  { id: 'deer', title: 'A deer',
+    text: `A deer is standing in the road. The bus stops. The deer walks to the door. It is holding a ticket in its mouth.`,
+    choices: [
+      { label: 'Let it board', go: () => { apply({ morale: 10, time: 5 }); return `It takes the seat behind you, unfolds a newspaper, and gets off without a word somewhere in the next county.`; } },
+      { label: 'Offer it a pork bun', item: 'bun', go: () => { S.inv.bun--; apply({ cash: 5, morale: 6 }); return `The deer eats the bun thoughtfully and tips you five dollars. You do not see where it was keeping the five dollars.`; } },
+      { label: 'Object', go: () => { apply({ time: 15, morale: -5 }); return `The driver examines the ticket. It’s valid. He holds it next to yours and frowns at yours.`; } },
+    ] },
+];
+
+const BLOWOUT = { id: 'blowout', title: 'BANG.', fixed: true, kicker: 'Breakdown',
+  text: `The bus lurches, shudders, and settles onto the shoulder with a sigh. A tire is gone. Not flat. Gone. The driver produces a wrench and looks at the passengers. The passengers look at you.`,
+  choices: [
+    { label: 'Help change the tire', sub: 'Mini-game: faster hands, less time lost', go: () => ({ text: `You take the wrench. Trucks howl past close enough to read their mudflaps.`, next: () => startTire(resumeDrive) }) },
+    { label: 'Flag down the Lucky Comet — $6', cost: 6, go: () => { S.bus = 1; S.health = 75; S.stats.buses++; apply({ time: 30, morale: -5 }); return `You stand in the road waving six dollars. The Lucky Comet stops. Your old driver watches you board it and gives a small nod. He understands. He’ll beat you there anyway.`; } },
+    { label: 'Wait for the driver’s cousin', go: () => { S.health = 65; apply({ time: 120, morale: -15 }); return `The cousin arrives two hours later, on a bicycle, with a tire under each arm.`; } },
+  ] };
+const THUMP = { id: 'thump', title: 'Thwap. Thwap. Thwap.', fixed: true, moving: true, kicker: 'Wheel well seat',
+  text: `Directly beneath you, something in the wheel well has started keeping time. Nobody else has noticed.`,
+  choices: [
+    { label: 'Tell the driver', go: () => { apply({ health: 30, time: 15 }); return `He pulls over, kicks the tire, and tightens something with a spoon. Fifteen minutes. The thwapping stops.`; } },
+    { label: 'Tape it from the inside', item: 'tape', go: () => { const n = useItem('tape'); apply({ health: 18 }); return `You pull up a floor panel, find the offending part, and tape it to a calmer part.` + n; } },
+    { label: 'It’s probably fine', go: () => { apply({ morale: -4 }); return `Thwap. Thwap. Thwap.`; } },
+  ] };
+const BLADDER = { id: 'bladder', title: 'A personal emergency', fixed: true, moving: true, kicker: 'Bladder: full',
+  text: `You’ve been ignoring it since the last state. It will not be ignored any further.`,
+  choices: [
+    { label: 'Brave the bus bathroom', go: () => { S.bladder = 0; chips.push(['bladder ▼', true]);
+      if (S.seat === 'back') { apply({ morale: 2 }); return `From the back row it’s two steps. You know this bathroom now. You have an understanding.`; }
+      apply({ morale: -15 }); return `You make the long walk down the aisle. What you see in there, you will carry with you.`; } },
+    { label: 'Beg the driver to pull over', go: () => { S.bladder = 0; chips.push(['bladder ▼', true]); apply({ time: 20, morale: -5 }); return `He stops beside a field. The entire bus watches you through the windows, in respectful silence.`; } },
+    { label: 'Hold it. You are stronger than this.', go: () => { S.bladder = 80; apply({ morale: -18 }); return `You are not stronger than this. But you are, for now, equal to it.`; } },
+  ] };
+const MISSED = { id: 'missed', title: 'The bus left without you', fixed: true, kicker: 'Uh oh',
+  text: `You burst out of the doors in time to watch the tail lights pull onto the highway. Your bag is on that bus. Your bun stash is on that bus.`,
+  choices: [
+    { label: 'Use your second ticket', item: 'ticket', go: () => { S.inv.ticket--; apply({ time: 25 }); return `In case of this. The next bus arrives, catches up to yours at a light, and the two drivers pass you between windows like a parcel.`; } },
+    { label: 'Pay a man with a van — $5', cost: 5, go: () => { apply({ time: 15 }); return `The van has no seats, just beanbags. He catches the bus in four minutes and charges you for nine.`; } },
+    { label: 'Run', go: () => { apply({ time: 40, morale: -20 }); return `You catch it at a red light two miles on. The driver opens the door and nods, as though this had been the arrangement all along.`; } },
+  ] };
+const TRANSFER = { id: 'transfer', title: 'End of the line (sort of)', fixed: true, kicker: 'New York · Transfer',
+  text: `Canal Street. The Fung Whoa goes no further tonight; the driver is already asleep across the front seats with his shoes off. D.C. is still 230 miles away. The curb offers options.`,
+  choices: [
+    { label: 'Use your second ticket', item: 'ticket', go: () => { S.inv.ticket--; S.bus = 4; S.health = 92; S.stats.buses++; apply({ morale: 10 }); return `The ticket turns out to be valid for something called <b>Fung Whoa Premium</b>. It has a second floor that isn’t visible from outside, and a man who brings you a hot towel.`; } },
+    { label: 'The Lucky Comet — $8', cost: 8, go: () => { S.bus = 1; S.health = 85; S.stats.buses++; return `Clean seats. Working lights. A driver who uses both hands. It feels like a betrayal, and it’s lovely.`; } },
+    { label: 'A bus with no name, engine already running — $4', cost: 4, go: () => { S.bus = 2; S.health = 55; S.stats.buses++; return `No sign, no logo, no number. The driver takes your four dollars without turning his head, or possibly without having one.`; } },
+    { label: 'A man holding a sign that says BUS — $1', cost: 1, go: () => { S.bus = 3; S.health = 32; S.stats.buses++; apply({ morale: 10 }); return `It’s a school bus, painted white, with a brush. The seats are for much smaller people. Honestly, everyone’s having a great time.`; } },
+    { label: 'Ride on in the luggage hold of the Fung Whoa', go: () => { apply({ morale: -15, time: 30 }); return `You wait half an hour for the driver to wake up, then climb in with the humming boxes. They make room.`; } },
+  ] };
+
+/* ---------- stops ---------- */
+function arrive() {
+  const L = leg(); S.mode = 'stop'; scene.speed = 0; scene.pots = []; chips = [];
+  if (L.stop === 'end') return ending('arrive');
+  const notes = [];
+  let wait = 10;
+  if (has('dev')) { wait += 8; notes.push(`Dev is last off and last on, dragging the duffel like a reluctant walrus.`); }
+  if (has('bjorn')) { wait += 6; notes.push(`Björn photographs a trash can. “Authentic!”`); }
+  apply({ time: wait });
+  if (has('ruth')) { apply({ morale: 8 }); notes.push(`Grandma Ruth hands round something warm from the cooler. Nobody asks.`); }
+  if (has('todd')) {
+    if (S.inv.bun > 0) { S.inv.bun--; chips.push(['− Pork bun', false]); notes.push(`A pork bun is missing. Todd is chewing with his entire head.`); }
+    else { apply({ morale: -4 }); notes.push(`Todd, bunless, emits a low sulking hum that sets off a car alarm.`); }
+  }
+  if (S.morale < 25 && S.party.length) { const p = pick(S.party); lose(p); notes.push(`${name(p)} has had enough, and quietly transfers to a train. Coward.`); }
+  S.leg++; updateHUD();
+  STOPS[L.stop](L, notes.map(n => `<p>${n}</p>`).join(''));
+}
+function stopMenu(titleText, text, opts, kicker) {
+  const draw = (note) => card(titleText, `<p>${note || text}</p>` + chipsHTML(), opts.filter(o => !o.used).map(o => ({
+    label: o.label, sub: o.sub, disabled: o.cost && S.cash < o.cost,
+    fn: () => { chips = []; o.used = true; if (o.cost) apply({ cash: -o.cost }); draw(o.go()); },
+  })).concat([{ label: 'Back on the bus', fn: startLeg }]), kicker);
+  draw();
+}
+const STOPS = {
+  dash: (L, notes) => card(L.to, `<p>The driver announces a five-minute stop by holding up five fingers and then, worryingly, lowering one.</p>${notes}` + chipsHTML(), [
+    { label: 'Run inside', sub: 'Mini-game: restroom, snacks, and back before the bus leaves', fn: () => startDash(L) },
+    { label: 'Stay on the bus', sub: 'Safe. Your bladder gets no vote.', fn: startLeg },
+  ], 'Rest stop'),
+  newhaven: (L, notes) => stopMenu('New Haven', `The bus stops outside a pizzeria with a line around the block. The driver gets out, walks to the front of the line, and is handed a pie without a word being spoken.${notes}`, [
+    { label: 'Get a slice — $4', cost: 4, sub: '+25 morale, +15 min', go: () => { apply({ morale: 25, time: 15 }); return `Charred, chewy, perfect. For one slice’s worth of time, nothing on the bus can hurt you.`; } },
+    { label: 'Use the pizzeria restroom', sub: 'Bladder emptied, +8 min', go: () => { S.bladder = 0; chips.push(['bladder ▼', true]); apply({ time: 8 }); return `Customers only, says the sign. The staff look at the bus, then at you, and wave you through with real pity.`; } },
+  ], 'City stop'),
+  philly: (L, notes) => stopMenu('Philadelphia', `The bus double-parks beside a cheesesteak window and a garage with a hand-painted sign: <b>WE FIX. NO QUESTIONS.</b>${notes}`, [
+    { label: 'Cheesesteak — $5', cost: 5, sub: 'Morale fully restored, +20 min', go: () => { apply({ morale: 100 - Math.round(S.morale), time: 20 }); return `You are asked how you want it, in a dialect that is mostly vowels. You answer wrong. They make it right anyway. Everything is going to be okay.`; } },
+    { label: 'Pay the mechanic — $6', cost: 6, sub: 'Bus +40, +20 min', go: () => { apply({ health: 40, time: 20 }); return `The mechanic removes a part, looks at it, throws it in the river, and declares the bus fixed. It is noticeably better.`; } },
+    { label: 'Run up the museum steps', sub: '+12 morale, +15 min', go: () => { apply({ morale: 12, time: 15, bladder: 8 }); return `You reach the top and raise both fists. So do forty other people. Nobody makes eye contact.`; } },
+  ], 'City stop'),
+  nyc: (L, notes) => runEvent(Object.assign({}, TRANSFER, { text: TRANSFER.text + notes }), () =>
+    shop('Canal Street', `A vendor’s table, lit by a single bulb: supplies for the second half. You have $${S.cash}.`, routeChoice2, 'New York')),
+};
+
+/* ---------- mini-game: tire change ---------- */
+function startTire(next) {
+  S.mode = 'tire'; scene.speed = 0;
+  const easy = has('rosa') && S.morale >= 50;
+  MG = { next, phase: 0, nut: 0, taps: 0, need: easy ? 2 : 4, easy, time: 0, truck: 'idle', truckT: rnd(3, 5), truckX: -200, msg: '', msgT: 0, spin: 0 };
+  panel.innerHTML = '';
+  panel.append(el('h2', 'Change the tire'), el('div', `<p><b>Tap the glowing lug nut</b> (or press space) to wrench it. Loosen all five, heave the spare on, tighten all five.</p>
+    <p>When a <b>TRUCK</b> roars past, hands off — the gust will take the nut right out of your fingers.</p>` + (easy ? `<p><i>Rosa is supervising. Everything takes half as long.</i></p>` : ''), 'body'));
+}
+const NUT = i => ({ x: 130 + Math.cos(i * 1.2566 - 1.57) * 20, y: 100 + Math.sin(i * 1.2566 - 1.57) * 20 });
+const SPARE = { x: 245, y: 118 };
+function tireTap(x, y) {
+  const T = MG; if (!T || T.done) return;
+  const tgt = T.phase === 1 ? SPARE : NUT(T.nut);
+  if (x !== undefined && Math.hypot(x - tgt.x, y - tgt.y) > (T.phase === 1 ? 30 : 16)) return;
+  if (T.truck === 'gust') { T.taps = 0; T.time += 2; T.msg = 'The gust takes it! (+2s)'; T.msgT = 1.2; scene.shake = .3; beep(90, .2, 'sawtooth', .08); return; }
+  T.taps++; T.spin += .8; beep(300 + T.taps * 60, .04);
+  if (T.phase === 1) { if (T.taps >= 5) { T.phase = 2; T.taps = 0; T.nut = 0; beep(660, .15, 'triangle'); } return; }
+  if (T.taps >= T.need) {
+    T.taps = 0; T.nut++;
+    if (T.nut >= 5) { T.nut = 0; T.phase++; beep(660, .15, 'triangle'); if (T.phase > 2) endTire(); }
+  }
+}
+function tireTick(dt) {
+  const T = MG; if (T.done) return;
+  T.time += dt; T.msgT -= dt; T.truckT -= dt;
+  if (T.truck === 'idle' && T.truckT <= 0) { T.truck = 'warn'; T.truckT = .9; beep(200, .3, 'sawtooth', .04); }
+  else if (T.truck === 'warn' && T.truckT <= 0) { T.truck = 'gust'; T.truckT = 1; T.truckX = -220; }
+  else if (T.truck === 'gust') { T.truckX += 760 * dt; if (T.truckT <= 0) { T.truck = 'idle'; T.truckT = rnd(2.2, 4.5); } }
+}
+function endTire() {
+  const T = MG; T.done = true; chips = [];
+  const secs = Math.round(T.time), lost = clamp(Math.round(10 + T.time * 1.5), 15, 75);
+  S.health = 65; S.stats.tires++; chips.push(['new tire', true]);
+  apply({ time: lost, morale: 8 });
+  const verdict = secs < 12 ? `A pit crew would weep.` : secs < 22 ? `Respectable. The driver grunts, which is his highest honour.` : `It’s on. It’s mostly round. That’s a tire.`;
+  S.mode = 'event'; MG = null;
+  outcome('Tire changed', `${secs} seconds of wrenching. ${verdict} The old tire is left on the shoulder as a warning to others.`, T.next, 'Breakdown');
+}
+
+/* ---------- mini-game: rest stop dash ---------- */
+const DASH_TABLES = [{ x: 56, y: 82, w: 52, h: 16 }, { x: 134, y: 100, w: 52, h: 16 }, { x: 212, y: 82, w: 52, h: 16 }];
+function startDash(L) {
+  S.mode = 'dash'; chips = [];
+  const D = MG = { L, time: 30, p: { x: 160, y: 150 }, target: null, away: false, float: [], honked: false,
+    npcs: [62, 70, 116, 126, 138, 58].map((y, i) => ({ x: rnd(20, 300), y, v: rnd(22, 46) * (i % 2 ? 1 : -1), c: `hsl(${i * 57 + 20},45%,55%)` })),
+    st: [
+      { id: 'wc', label: 'RESTROOM', x: 8, y: 12, w: 64, h: 26, need: rnd(2, 4.2), prog: 0, can: () => true,
+        fx: () => { S.bladder = 0; chips.push(['bladder ▼', true]); return 'Ahhh.'; } },
+      { id: 'vend', label: 'VEND $1', x: 146, y: 12, w: 28, h: 26, need: 1, prog: 0, can: () => S.cash >= 1,
+        fx: () => { apply({ cash: -1 }); const k = pick(['bun', 'bun', 'tape', 'dram', 'pillow']); give(k); return ITEMS[k].n + '!'; } },
+      { id: 'food', label: 'FOOD $3', x: 248, y: 12, w: 64, h: 26, need: 2, prog: 0, can: () => S.cash >= 3,
+        fx: () => { apply({ cash: -3, morale: 20 }); return 'Hot food!'; } },
+    ] };
+  panel.innerHTML = '';
+  panel.append(el('h2', L.to + ': five minutes'), el('div', `<p><b>Move with arrow keys / WASD, or tap where you want to go.</b></p>
+    <p>Stand at the <b>restroom</b>, <b>food counter</b> ($3) or <b>vending machine</b> ($1, mystery item) to use them. The restroom line is whatever it is.</p>
+    <p>Be back at the <b>door</b> before the clock runs out. The driver will not count heads.</p>`, 'body'));
+}
+function dashBlocked(x, y) {
+  if (x < 10 || x > 310 || y < 40 || y > 172) return true;
+  return DASH_TABLES.some(t => x > t.x - 4 && x < t.x + t.w + 4 && y > t.y - 4 && y < t.y + t.h + 5);
+}
+function dashTick(dt) {
+  const D = MG, p = D.p; D.time -= dt;
+  let dx = (keys.arrowright || keys.d ? 1 : 0) - (keys.arrowleft || keys.a ? 1 : 0);
+  let dy = (keys.arrowdown || keys.s ? 1 : 0) - (keys.arrowup || keys.w ? 1 : 0);
+  if (dx || dy) D.target = null;
+  else if (D.target) {
+    const tx = D.target.x - p.x, ty = D.target.y - p.y, d = Math.hypot(tx, ty);
+    if (d < 2) D.target = null; else { dx = tx / d; dy = ty / d; }
+  }
+  for (const n of D.npcs) { n.x += n.v * dt; if (n.x < 14 || n.x > 306) n.v *= -1; }
+  const crowded = D.npcs.some(n => Math.hypot(n.x - p.x, n.y - p.y) < 9);
+  const len = Math.hypot(dx, dy) || 1, sp = (crowded ? 30 : 78) * dt;
+  if (!dashBlocked(p.x + dx / len * sp, p.y)) p.x += dx / len * sp;
+  if (!dashBlocked(p.x, p.y + dy / len * sp)) p.y += dy / len * sp;
+  if (p.y < 128) D.away = true;
+
+  for (const s of D.st) {
+    const inZone = p.x > s.x - 2 && p.x < s.x + s.w + 2 && p.y < s.y + s.h + 20;
+    if (!s.done && inZone && s.can()) {
+      s.prog += dt;
+      if (s.prog >= s.need) { s.done = true; D.float.push({ x: p.x, y: p.y - 10, t: 1.4, s: s.fx() }); beep(740, .12, 'triangle'); }
+    } else if (!s.done) s.prog = Math.max(0, s.prog - dt * 2);
+  }
+  for (const f of D.float) { f.t -= dt; f.y -= 12 * dt; }
+  D.float = D.float.filter(f => f.t > 0);
+  if (D.time < 8 && !D.honked) { D.honked = true; beep(180, .5, 'sawtooth', .07); D.float.push({ x: 160, y: 160, t: 1.6, s: 'HONK!' }); }
+
+  if (D.away && p.y > 164 && Math.abs(p.x - 160) < 22) return endDash(true);
+  if (D.time <= 0) endDash(false);
+}
+function endDash(ok) {
+  const D = MG; MG = null; S.mode = 'stop';
+  const got = D.st.filter(s => s.done).length;
+  if (!ok) return runEvent(MISSED, startLeg);
+  const text = got === 3 ? `Restroom, snack, mystery item, and back with ${Math.ceil(D.time * 10 / 60)} “minutes” to spare. You board like a returning astronaut.`
+    : got ? `You make it back as the door is closing. The driver was already rolling. He was always already rolling.`
+    : `You went in, looked at everything, and came back out. A kind of tourism.`;
+  outcome('Back on board', text, startLeg, D.L.to);
+}
+
+/* ---------- endings ---------- */
+function ending(kind) {
+  S.mode = 'over'; scene.speed = 0; scene.pots = [];
+  const onTime = S.t <= DEADLINE, arrived = S.party.length, total = arrived + S.lost.length;
+  const h = Math.floor(S.t / 60), m = Math.round(S.t % 60);
+  let head, blurb, rating;
+  if (kind === 'quit') {
+    const where = leg() ? leg().to : 'nowhere';
+    head = 'You get off the bus';
+    blurb = `Morale has reached zero. Somewhere short of ${where}, you ask the driver to stop, step down onto the shoulder, and walk into the trees. You live here now. It’s fine. There’s a pond.`;
+    rating = `RESIDENT OF NEAR-${where.toUpperCase()}`;
+  } else if (onTime) {
+    head = 'Washington, D.C.';
+    blurb = `The bus coasts to a stop on a grey D.C. curb at ${clockStr(S.t)}, with ${Math.round(DEADLINE - S.t)} minutes to spare. The door opens by falling off. You made it.` + (S.stats.buses > 1 ? ` It isn’t the bus you started on, but nobody checks.` : ` Same bus, start to finish. Almost nobody can say that.`);
+    rating = arrived === total && total ? 'SEASONED COMMUTER' : arrived ? 'MADE IT, TECHNICALLY' : 'ARRIVED ALONE, BUT ARRIVED';
+  } else {
+    head = 'Washington, D.C. (late)';
+    blurb = `The bus rolls into D.C. at ${clockStr(S.t)}, ${Math.round(S.t - DEADLINE)} minutes after you needed to be here. The sun is up. The thing you came for has happened without you. Still: fifteen dollars.`;
+    rating = 'FASHIONABLY TOMORROW';
+  }
+  const pad = (a, b) => a.padEnd(15) + b;
+  const receipt = [
+    'THE FUNG WHOA BUS CO.', 'Boston, MA  →  Washington, DC', '------------------------------',
+    pad('Result', kind === 'quit' ? 'DID NOT ARRIVE' : onTime ? 'ON TIME' : 'LATE'),
+    pad('Clock', clockStr(S.t)), pad('Trip time', `${h}h ${m}m`), pad('Buses used', String(S.stats.buses)),
+    pad('Companions', `${arrived} of ${total} still aboard`), pad('Pork buns', `${S.stats.buns} eaten`),
+    pad('Potholes', `${S.stats.hit} hit, ${S.stats.dodged} dodged`), pad('Tires changed', String(S.stats.tires)),
+    pad('Cash left', '$' + S.cash), '------------------------------', 'RATING: ' + rating, 'NO REFUNDS. THANK YOU.',
+  ].join('\n');
+  panel.innerHTML = '';
+  panel.append(el('div', kind === 'quit' ? 'The end' : 'Arrival', 'kicker'), el('h2', head), el('div', `<p>${blurb}</p>`, 'body'));
+  const r = el('div', '', 'receipt'); r.textContent = receipt; panel.append(r);
+  const box = el('div', '', 'choices');
+  const again = el('button', '<span class="k">1</span>Ride again', 'choice'); again.onclick = title;
+  const copy = el('button', '<span class="k">2</span>Copy receipt', 'choice');
+  copy.onclick = () => { navigator.clipboard && navigator.clipboard.writeText(receipt).then(() => copy.innerHTML = '<span class="k">2</span>Copied!'); };
+  box.append(again, copy); panel.append(box);
+  beep(onTime && kind !== 'quit' ? 880 : 200, .4, 'triangle');
+}
+
+/* ---------- rendering ---------- */
+const rect = (x, y, w, h, c) => { g.fillStyle = c; g.fillRect(Math.round(x), Math.round(y), w, h); };
+const circ = (x, y, r, c) => { g.fillStyle = c; g.beginPath(); g.arc(x, y, r, 0, 6.2832); g.fill(); };
+function txt(s, x, y, c = '#fff', size = 8, align = 'left') { g.font = `bold ${size}px "Courier New",monospace`; g.textAlign = align; g.fillStyle = c; g.fillText(s, x, y); }
+const SKY = [[0, [58, 60, 130], [240, 138, 75]], [100, [13, 15, 43], [42, 35, 80]], [600, [13, 15, 43], [42, 35, 80]], [700, [70, 100, 170], [246, 176, 120]]];
+function skyAt(t) {
+  let a = SKY[0], b = SKY[SKY.length - 1];
+  for (let i = 0; i < SKY.length - 1; i++) if (t >= SKY[i][0]) { a = SKY[i]; b = SKY[i + 1]; }
+  const k = clamp((t - a[0]) / (b[0] - a[0]), 0, 1), mix = (p, q) => `rgb(${p.map((v, i) => Math.round(v + (q[i] - v) * k)).join(',')})`;
+  return [mix(a[1], b[1]), mix(a[2], b[2])];
+}
+function drawRoad(dt, time) {
+  const [top, bot] = skyAt(S.t), grad = g.createLinearGradient(0, 0, 0, 120);
+  grad.addColorStop(0, top); grad.addColorStop(1, bot);
+  g.fillStyle = grad; g.fillRect(0, 0, W, H);
+  const night = clamp((S.t - 30) / 70, 0, 1) * clamp((690 - S.t) / 70, 0, 1);
+  for (let i = 0; i < 40; i++) rect(hash(i) * W, hash(i + 99) * 80, 1, 1, `rgba(255,255,255,${night * (.4 + .6 * hash(i + 7)) * (.7 + .3 * Math.sin(time * 2 + i))})`);
+  circ(262, 30, 9, `rgba(255,248,220,${.25 + night * .7})`);
+
+  // far skyline
+  const o1 = scene.scroll * .22;
+  for (let i = Math.floor(o1 / 26) - 1; i < Math.floor(o1 / 26) + 15; i++) {
+    const x = i * 26 - o1, hh = 18 + hash(i) * 46, ww = 17 + hash(i + .5) * 8;
+    rect(x, 122 - hh, ww, hh, '#191631');
+    for (let r = 0; r < hh / 7 - 1; r++) for (let c = 0; c < 3; c++)
+      if (hash(i * 7 + r * 3 + c) > .62) rect(x + 3 + c * 5, 125 - hh + r * 7, 2, 3, `rgba(246,197,49,${.25 + night * .6})`);
+  }
+  // near trees and signs
+  const o2 = scene.scroll * .6;
+  for (let i = Math.floor(o2 / 44) - 1; i < Math.floor(o2 / 44) + 10; i++) {
+    const x = i * 44 - o2;
+    if (((i % 7) + 7) % 7 === 3 && leg()) {
+      rect(x + 12, 96, 2, 34, '#555'); rect(x - 6, 88, 60, 16, '#1d6b45'); rect(x - 5, 89, 58, 14, '#23825a');
+      txt(leg().to.toUpperCase().slice(0, 12), x + 24, 99, '#fff', 6, 'center');
+    } else { circ(x + 10, 118, 10 + hash(i) * 6, '#12241f'); circ(x + 24, 121, 8 + hash(i + 3) * 5, '#16302a'); }
+  }
+  rect(0, 126, W, 4, '#2a2838');                               // guardrail
+  for (let x = -(scene.scroll % 20); x < W; x += 20) rect(x, 126, 2, 8, '#3d3a50');
+  rect(0, 132, W, 48, '#33343f'); rect(0, 132, W, 1, '#55566a');
+  for (let x = -(scene.scroll % 36); x < W; x += 36) rect(x, 164, 18, 2, '#d9c76a');
+
+  for (const p of scene.pots) if (S.seat === 'front' || p.x < 232 || S.flags.foresee > 0) {
+    g.fillStyle = '#16161c'; g.beginPath(); g.ellipse(p.x, ROAD_Y + 4, 9, 3, 0, 0, 6.2832); g.fill();
+    if (S.seat === 'front' && p.x > 160) txt('!', p.x, ROAD_Y - 6, '#f6c531', 10, 'center');
+  }
+
+  // UFO
+  if (scene.ufo) {
+    const ux = 88, uy = 34 + Math.sin(time * 2) * 3;
+    g.fillStyle = 'rgba(200,255,240,.22)'; g.beginPath(); g.moveTo(ux - 8, uy + 4); g.lineTo(ux + 8, uy + 4); g.lineTo(ux + 62, ROAD_Y + 4); g.lineTo(ux - 62, ROAD_Y + 4); g.fill();
+    g.fillStyle = '#9aa3b5'; g.beginPath(); g.ellipse(ux, uy, 26, 6, 0, 0, 6.2832); g.fill();
+    g.fillStyle = '#39c2a8'; g.beginPath(); g.ellipse(ux, uy - 4, 10, 6, 0, 3.1416, 6.2832); g.fill();
+    for (let i = -2; i <= 2; i++) rect(ux + i * 9 - 1, uy, 2, 2, (Math.floor(time * 6) + i) % 2 ? '#f6c531' : '#fff');
+  }
+
+  // bus
+  const moving = scene.speed > 0;
+  const by = ROAD_Y - scene.hopY - (scene.ufo ? 5 + Math.sin(time * 3) : 0) + (moving ? Math.sin(time * 22) * .6 : 0);
+  if (scene.hopY > 0 || scene.ufo) { g.fillStyle = 'rgba(0,0,0,.3)'; g.beginPath(); g.ellipse(88, ROAD_Y + 2, 44, 3, 0, 0, 6.2832); g.fill(); }
+  drawBus(40, by, time, moving);
+  // smoke
+  if (S.health < 40 && moving && Math.random() < .3) scene.smoke.push({ x: 40, y: by - 10, r: 2, a: .6 });
+  for (const s of scene.smoke) { s.x -= 40 * dt; s.y -= 12 * dt; s.r += 6 * dt; s.a -= .5 * dt; circ(s.x, s.y, s.r, `rgba(120,120,130,${Math.max(0, s.a)})`); }
+  scene.smoke = scene.smoke.filter(s => s.a > 0);
+}
+function drawBus(x, y, time, moving) {
+  const B = BUSES[S.bus];
+  if (scene.glow > 0) { g.fillStyle = `rgba(57,194,168,${scene.glow * .5})`; g.fillRect(x - 4, y - 44, 104, 46); }
+  if (moving || S.mode === 'event') { g.fillStyle = 'rgba(255,240,170,.13)'; g.beginPath(); g.moveTo(x + 96, y - 12); g.lineTo(x + 190, y - 26); g.lineTo(x + 190, y + 4); g.fill(); }
+  rect(x, y - 40, 96, 32, B.b); rect(x + 92, y - 36, 4, 28, B.b);
+  rect(x, y - 23, 96, 3, B.s); rect(x, y - 9, 96, 2, '#22222b');
+  if (B.n) txt(B.n, x + 6, y - 12, B.t, 6);
+  // windows: 0 = back … 5 = driver
+  const seatWin = { front: 4, wheel: 3, back: 0, stranger: 2 }[S.seat];
+  const others = [1, 2, 3, 0, 4].filter(w => w !== seatWin);
+  for (let w = 0; w < 6; w++) {
+    const wx = x + 5 + w * 15;
+    rect(wx, y - 36, 12, 12, '#b9e6ff'); rect(wx, y - 36, 12, 2, '#e6f6ff');
+    if (w === 5) { circ(wx + 6, y - 28, 3.5, '#1c1c26'); rect(wx + 2, y - 26, 8, 3, '#1c1c26'); continue; }
+    let id = null;
+    if (w === seatWin) id = 'you'; else { const i = others.indexOf(w); if (i < S.party.length) id = S.party[i]; }
+    if (!id) continue;
+    const bob = moving ? Math.round(Math.sin(time * 9 + w)) * .5 : 0;
+    circ(wx + 6, y - 28 + bob, 3.5, id === 'you' ? '#f2c9a0' : PEOPLE[id].c);
+    if (id === 'you') rect(wx + 2, y - 32 + bob, 8, 2, '#d8342c');
+    if (id === 'todd') { rect(wx + 4, y - 29 + bob, 1, 1, '#eaffd0'); rect(wx + 7, y - 29 + bob, 1, 1, '#eaffd0'); rect(wx + 5.5, y - 34 + bob, 1, 3, '#39c2a8'); }
+  }
+  rect(x + 96, y - 14, 2, 4, '#fff3a8'); rect(x - 1, y - 14, 1, 4, '#ff5a4e');
+  for (const wx of [x + 20, x + 76]) {
+    circ(wx, y - 6, 7, '#101014'); circ(wx, y - 6, 3, '#8a8d99');
+    const a = moving ? time * 14 : 0; rect(wx + Math.cos(a) * 4.5 - .5, y - 6 + Math.sin(a) * 4.5 - .5, 1.5, 1.5, '#cfd2dc');
+  }
+}
+function drawTire(time) {
+  const T = MG;
+  rect(0, 0, W, H, '#11122a'); rect(0, 140, W, 40, '#2b2c36'); rect(0, 140, W, 1, '#55566a');
+  rect(20, 20, 280, 96, BUSES[S.bus].b); rect(20, 86, 280, 8, BUSES[S.bus].s);       // side of the bus
+  circ(130, 100, 44, '#0c0c10');
+  if (T.phase !== 1) { circ(130, 100, 38, '#18181e'); circ(130, 100, 28, '#8a8d99'); circ(130, 100, 8, '#5c5f6b'); }
+  else { circ(130, 100, 28, '#3a3d4a'); circ(130, 100, 5, '#22222b'); }
+  for (let i = 0; i < 5; i++) {
+    const n = NUT(i), active = T.phase !== 1 && i === T.nut;
+    const off = T.phase === 0 ? i < T.nut : T.phase === 1 ? true : i >= T.nut && !active;
+    if (off && !(T.phase === 2 && active)) { circ(n.x, n.y, 3, '#22222b'); continue; }
+    if (active) circ(n.x, n.y, 8 + Math.sin(time * 10) * 1.5, 'rgba(246,197,49,.45)');
+    circ(n.x, n.y, 4.5, active ? '#f6c531' : '#cfd2dc');
+    if (active) { g.strokeStyle = '#15131f'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(n.x, n.y); g.lineTo(n.x + Math.cos(T.spin) * 4, n.y + Math.sin(T.spin) * 4); g.stroke(); }
+  }
+  // spare
+  if (T.phase <= 1) {
+    if (T.phase === 1) circ(SPARE.x, SPARE.y, 31 + Math.sin(time * 10) * 2, 'rgba(246,197,49,.4)');
+    circ(SPARE.x - (T.phase === 1 ? T.taps * 9 : 0), SPARE.y, 26, '#18181e'); circ(SPARE.x - (T.phase === 1 ? T.taps * 9 : 0), SPARE.y, 15, '#8a8d99');
+  }
+  const label = ['LOOSEN THE NUTS', 'HEAVE THE SPARE ON', 'TIGHTEN THE NUTS'][T.phase] || '';
+  txt(label, 160, 13, '#f6c531', 9, 'center');
+  txt(`${T.time.toFixed(1)}s`, 312, 13, '#fff', 8, 'right');
+  txt(T.phase === 1 ? `${T.taps}/5` : `nut ${T.nut + 1}/5`, 8, 13, '#fff', 8);
+  if (T.truck === 'warn' && Math.floor(time * 10) % 2) { rect(90, 150, 140, 18, '#d8342c'); txt('TRUCK! HANDS OFF', 160, 163, '#fff', 10, 'center'); }
+  if (T.truck === 'gust') {
+    rect(T.truckX, 118, 190, 62, '#c9ccd6'); rect(T.truckX + 190, 134, 38, 46, '#2f6fd0'); rect(T.truckX + 200, 140, 22, 14, '#b9e6ff');
+    for (let i = 0; i < 8; i++) rect((T.truckX - 30 - i * 37) % W, 30 + i * 13, 26, 1, 'rgba(255,255,255,.5)');
+  }
+  if (T.msgT > 0) txt(T.msg, 160, 172, '#ff7a6e', 9, 'center');
+}
+function drawDash(time) {
+  const D = MG;
+  rect(0, 0, W, H, '#cfc8b4');
+  for (let y = 40; y < 176; y += 12) for (let x = 6 + ((y / 12) % 2) * 12; x < 314; x += 24) rect(x, y, 12, 12, '#c4bca5');
+  rect(0, 0, W, 10, '#3a3d4a'); rect(0, 0, 6, H, '#3a3d4a'); rect(314, 0, 6, H, '#3a3d4a'); rect(0, 176, W, 4, '#3a3d4a');
+  for (const s of D.st) {
+    rect(s.x, s.y - 2, s.w, s.h, s.done ? '#6b7a6b' : s.id === 'wc' ? '#2f6fd0' : s.id === 'food' ? '#d8342c' : '#7a3fb0');
+    rect(s.x, s.y + s.h - 2, s.w, 20, 'rgba(246,197,49,.22)');
+    txt(s.done ? 'DONE' : s.label, s.x + s.w / 2, s.y + 13, '#fff', s.id === 'vend' ? 5 : 7, 'center');
+    if (s.prog > 0 && !s.done) { rect(s.x, s.y + s.h, s.w, 3, '#000'); rect(s.x, s.y + s.h, s.w * s.prog / s.need, 3, '#f6c531'); }
+  }
+  for (const t of DASH_TABLES) { rect(t.x, t.y + 3, t.w, t.h, 'rgba(0,0,0,.15)'); rect(t.x, t.y, t.w, t.h, '#8b5e3c'); rect(t.x + 2, t.y + 2, t.w - 4, 3, '#a8764c'); }
+  const urgent = D.time < 8 && Math.floor(time * 6) % 2;
+  rect(138, 168, 44, 12, urgent ? '#f6c531' : '#2c8a4b'); txt('BUS ▼', 160, 177, urgent ? '#15131f' : '#fff', 7, 'center');
+  if (D.target) { g.strokeStyle = '#d8342c'; g.lineWidth = 1; g.beginPath(); g.arc(D.target.x, D.target.y, 4 + Math.sin(time * 8), 0, 6.2832); g.stroke(); }
+  for (const n of D.npcs) { rect(n.x - 3, n.y - 2, 6, 7, n.c); circ(n.x, n.y - 5, 3, '#e9c7a2'); }
+  const p = D.p; rect(p.x - 3, p.y - 2, 6, 7, '#15131f'); circ(p.x, p.y - 5, 3.2, '#f2c9a0'); rect(p.x - 4, p.y - 9, 8, 2, '#d8342c');
+  for (const f of D.float) txt(f.s, f.x, f.y, '#15131f', 8, 'center');
+  const secs = Math.max(0, Math.ceil(D.time * 10)), mm = Math.floor(secs / 60), ss = String(secs % 60).padStart(2, '0');
+  rect(132, 0, 56, 11, D.time < 8 ? '#d8342c' : '#15131f'); txt(`${mm}:${ss}`, 160, 9, '#fff', 9, 'center');
+}
+
+/* ---------- input + main loop ---------- */
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase(); keys[k] = true;
+  if (k === ' ') { e.preventDefault(); if (S.mode === 'drive') hop(); else if (S.mode === 'tire') tireTap(); return; }
+  if (k.startsWith('arrow') && S.mode === 'dash') e.preventDefault();
+  if (/^[1-9]$/.test(k) && S.mode !== 'dash' && S.mode !== 'tire') {
+    const b = panel.querySelectorAll('button.choice:not(.big)')[+k - 1];
+    if (b && !b.disabled) b.click();
+  }
+});
+addEventListener('keyup', e => { keys[e.key.toLowerCase()] = false; });
+cv.addEventListener('pointerdown', e => {
+  const r = cv.getBoundingClientRect(), x = (e.clientX - r.left) / r.width * W, y = (e.clientY - r.top) / r.height * H;
+  if (S.mode === 'drive') hop();
+  else if (S.mode === 'tire') tireTap(x, y);
+  else if (S.mode === 'dash' && MG) MG.target = { x, y: Math.max(42, y) };
+});
+$('#mute').onclick = () => { muted = !muted; $('#mute').textContent = muted ? '×' : '♪'; };
+
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(.05, (now - last) / 1000), time = now / 1000; last = now;
+  if (S.mode === 'drive') driveTick(dt);
+  else if (S.mode === 'tire' && MG) tireTick(dt);
+  else if (S.mode === 'dash' && MG) dashTick(dt);
+
+  scene.scroll += scene.speed * 120 * dt;
+  if (scene.hopY > 0) { scene.hopY += scene.hopV * dt; scene.hopV -= 420 * dt; if (scene.hopY <= 0) { scene.hopY = 0; scene.cool = .3; } }
+  scene.cool = Math.max(0, scene.cool - dt); scene.shake = Math.max(0, scene.shake - dt); scene.glow = Math.max(0, scene.glow - dt);
+
+  g.setTransform(2, 0, 0, 2, scene.shake > 0 ? rnd(-3, 3) : 0, scene.shake > 0 ? rnd(-3, 3) : 0);
+  if (S.mode === 'tire' && MG) drawTire(time);
+  else if (S.mode === 'dash' && MG) drawDash(time);
+  else drawRoad(dt, time);
+  updateHUD();
+  requestAnimationFrame(frame);
+}
+
+title();
+requestAnimationFrame(frame);
+window.FWB = { get S() { return S; }, get MG() { return MG; }, scene, hop, tireTap };   // for debugging in the console
+</script>
+</body>
+</html>
